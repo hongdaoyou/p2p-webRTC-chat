@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC DataChannel Demo - Receiver</title>
+    <meta charset="UTF-8">
+    <!-- <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script> -->
+    <style>
+        #log {
+            height: 150px;
+            overflow-y: scroll;
+            border: 1px solid black;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h3>WebRTC DataChannel Demo - Receiver</h3>
+    <div>
+        <label>Received Messages: </label>
+        <div id="messageField"></div>
+    </div>
+    <hr />
+
+    <div>
+        <h4>Log:</h4>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        var remoteConnection = new RTCPeerConnection();
+
+        remoteConnection.onicecandidate = function (event) {
+            console.log("remote ice candidate:", event.candidate);
+            if (event.candidate) {
+                sendSignal(event.candidate);
+            }
+        };
+        
+        remoteConnection.ondatachannel = function (event) {
+            var dataChannel = event.channel;
+
+            dataChannel.onopen = function (event) {
+                updateLog("Data channel is open.");
+            };
+            dataChannel.onclose = function (event) {
+                updateLog("Data channel is closed.");
+            };
+            dataChannel.onmessage = function (event) {
+                var messageDiv = document.getElementById("messageField");
+                messageDiv.innerHTML += "<div>" + event.data + "</div>";
+                updateLog("Received message: " + event.data);
+            };
+        };
+
+        var signalingChannel = new WebSocket("ws://localhost:3000/signaling");
+        signalingChannel.onmessage = function (event) {
+            var msg = JSON.parse(event.data);
+            console.log("received signaling message:", msg);
+            if (msg.type == "offer") {
+                handleOffer(msg);
+            } else if (msg.type == "answer") {
+                handleAnswer(msg);
+            } else if (msg.candidate) {
+                handleIceCandidate(msg);
+            }
+        };
+
+        function updateLog(log) {
+            var logDiv = document.getElementById("log");
+            logDiv.innerHTML += "<div>" + log + "</div>";
+        }
+
+        function sendSignal(signal) {
+            var msg = JSON.stringify(signal);
+            signalingChannel.send(msg);
+        }
+
+        function sendAnswer() {
+            remoteConnection.createAnswer().then(function (answer) {
+                console.log("remote answer created:", answer);
+                remoteConnection.setLocalDescription(answer).then(function () {
+                    sendSignal(answer);
+                });
+            });
+        }
+
+        function handleOffer(offer) {
+            console.log("remote offer:", offer);
+            remoteConnection.setRemoteDescription(offer).then(function () {
+                sendAnswer();
+            });
+        }
+
+        function handleAnswer(answer) {
+            console.log("local answer:", answer);
+            remoteConnection.setRemoteDescription(answer);
+        }
+
+        function handleIceCandidate(candidate) {
+            console.log("local ice candidate:", candidate);
+            var iceCandidate = new RTCIceCandidate(candidate);
+            remoteConnection.addIceCandidate(iceCandidate);
+        }
+    </script>
+</body>
+</html>

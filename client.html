@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC DataChannel Demo - Sender</title>
+    <meta charset="UTF-8">
+    <!-- <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script> -->
+    <style>
+        #log {
+            height: 150px;
+            overflow-y: scroll;
+            border: 1px solid black;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <button onclick="sendOffer()">建立,连接</button>
+
+    <h3>WebRTC DataChannel Demo - Sender</h3>
+    <div>
+        <label>Send Message: </label>
+        <input type="text" id="messageInput" />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <hr />
+
+    <div>
+        <h4>Log:</h4>
+        <div id="log"></div>
+    </div>
+
+<script>
+
+// RTC连接
+var localConnection = new RTCPeerConnection();
+
+// 本地的 ICE 候选项对象,有变化了 . 然后发送给,远程的. 进行协商
+localConnection.onicecandidate = function (event) {
+    console.log("local ice candidate:", event.candidate);
+    if (event.candidate) {
+        sendSignal(event.candidate);
+    }
+};
+
+// 创建通道
+var dataChannel = null;
+
+
+
+var signalingChannel = new WebSocket("ws://localhost:3000/signaling");
+signalingChannel.onmessage = function (event) {
+    var msg = JSON.parse(event.data);
+    // console.log("received signaling message:", msg);
+    if (msg.type == "offer") {
+        console.log("1111");
+        handleOffer(msg);
+
+    } else if (msg.type == "answer") {
+        console.log("2222");
+        
+        handleAnswer(msg);
+    // } else if (msg.type == "icecandidate") {
+    } else if (msg.candidate) {
+
+        console.log("3333");
+
+        handleIceCandidate(msg);
+    }
+};
+
+// 发送消息
+function sendMessage() {
+    var message = document.getElementById("messageInput").value;
+    console.log(dataChannel.readyState );
+    dataChannel.send(message);
+    // dataChannel.send(JSON.stringify(message));
+
+    updateLog("Sent message: " + message);
+}
+
+function updateLog(log) {
+    var logDiv = document.getElementById("log");
+    logDiv.innerHTML += "<div>" + log + "</div>";
+}
+
+function sendOffer() {
+    console.log("send了");
+
+    // 主动,建立通道
+    dataChannel = localConnection.createDataChannel("sendChannel");
+    dataChannel.onopen = function (event) {
+        updateLog("Data channel is open.");
+    };
+
+    dataChannel.onclose = function (event) {
+        updateLog("Data channel is closed.");
+    };
+
+    dataChannel.onerror = function (event) {
+        updateLog("Data channel is error.");
+    }
+
+    dataChannel.onmessage = function (event) {
+        console.log("Mess1111");
+        updateLog("Received message: " + event.data);
+    };
+
+    localConnection.createOffer().then(function (offer) {
+        console.log("local offer created:", offer);
+        localConnection.setLocalDescription(offer).then(function () {
+            sendSignal(offer);
+        });
+    });
+}
+
+// 通道,被打开
+localConnection.ondatachannel = function (event) {
+    dataChannel = event.channel;
+    dataChannel.onopen = function (event) {
+        updateLog("Data channel is open.");
+    };
+    dataChannel.onclose = function (event) {
+        updateLog("Data channel is closed.");
+    };
+    dataChannel.onmessage = function (event) {
+        console.log("Mess1111");
+        updateLog("Received message: " + event.data);
+
+    };
+};
+
+
+function sendSignal(signal) {
+    var msg = JSON.stringify(signal);
+    signalingChannel.send(msg);
+}
+
+function handleOffer(offer) {
+    console.log("remote offer:", offer);
+    localConnection.setRemoteDescription(offer).then(function () {
+        
+        localConnection.createAnswer().then(function (answer) {
+            console.log("local answer created:", answer);
+            localConnection.setLocalDescription(answer).then(function () {
+                sendSignal(answer);
+            });
+        });
+    });
+}
+
+function handleAnswer(answer) {
+    console.log("remote answer:", answer);
+    localConnection.setRemoteDescription(answer);
+}
+
+function handleIceCandidate(candidate) {
+    console.log("remote ice candidate:", candidate);
+    var iceCandidate = new RTCIceCandidate(candidate);
+    localConnection.addIceCandidate(iceCandidate);
+}
+
+// sendOffer();
+</script>
+    
+</body>
+</html>
+
